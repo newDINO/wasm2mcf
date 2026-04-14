@@ -1,0 +1,1 @@
+$data remove storage wasm:c stack[$(a0)]

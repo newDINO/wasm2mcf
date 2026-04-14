@@ -1,0 +1,9 @@
+{
+    "pack": {
+        "description": {
+            "translate": "dataPack.vanilla.description"
+        },
+        "min_format": [88, 0],
+        "max_format": [88, 0]
+    }
+}

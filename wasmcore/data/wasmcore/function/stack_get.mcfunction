@@ -1,0 +1,1 @@
+$return run data get storage wasm:c stack[$(a0)]

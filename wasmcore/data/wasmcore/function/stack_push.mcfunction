@@ -1,0 +1,1 @@
+$data modify storage wasm:c stack append value $(a0)

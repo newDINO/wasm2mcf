@@ -1,0 +1,7 @@
+[workspace]
+members = ["crates/wasm2mcf", "crates/wasmtest"]
+resolver = "3"
+
+[profile.dev]
+debug = false
+opt-level = 1

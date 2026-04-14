@@ -1,0 +1,1 @@
+$data modify storage wasm:c args.a$(a0) set from storage wasm:m mems[$(a1)][$(a2)]

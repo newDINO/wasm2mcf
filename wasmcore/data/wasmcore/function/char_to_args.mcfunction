@@ -1,0 +1,1 @@
+$data modify storage wasm:c args.a$(a0) set from storage wasm:chars list[$(a1)]

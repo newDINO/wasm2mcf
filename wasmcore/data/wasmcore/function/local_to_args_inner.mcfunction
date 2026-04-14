@@ -1,0 +1,1 @@
+$data modify storage wasm:c args.a$(a2) set from storage wasm:c locals[$(a0)][$(a1)]
