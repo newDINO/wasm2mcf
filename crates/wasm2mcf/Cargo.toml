@@ -5,5 +5,6 @@ edition = "2024"
 
 [dependencies]
 wasmparser = "0.246"
-crab_nbt = { version = "0.2", features = ["serde"] }
+na_nbt = "0.2"
 serde = { version = "1", features = ["derive"] }
+bytemuck = "1"

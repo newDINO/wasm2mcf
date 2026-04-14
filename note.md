@@ -108,13 +108,27 @@ fn simulate_u32_div_even_using_i32_div_even(v: u32, d: u32) -> u32 {
 - Sandstone (based on typescript)
 
 # 第二步，方案：
-## 1. 直接用list作为栈
+## 1
+### 直接用list作为栈
 
 `i32.const 42` 变为：`function wasmcore:stack_push {a0: 42}`
 
 `i32.add` 变为：`function wasmcore:add`
 
 目前是使用data get获取栈的大小，事实上栈的大小是在编译器可知的，吗？并不可知，如果可以随意调用其他函数的话
+
+### low level 与 high level mcfunction
+存在两种mcfunction：
+
+一种是low level，它们可以使用args向其传递参数，并直接使用args中的特定名称的field作为参数，
+因此当low level mcf内部可能调用自身时，必须要非常小心确保不会出bug
+
+另一种是high level，它们使用locals进行参数传递，如wasm直接编译而来的mcfunction
+
+除了low level mcf 除了object和string尽量使用mc原有返回机制
+简单的和模拟循环的递归尽量不要使用locals避免栈变得过大
+
+但是新发现的可以用-1从后往前索引或将改变一切，现在从locals获取参数变得非常容易，可能不会出现用fixed_args传递参数的情况了
 
 
 # 第三步，实现：

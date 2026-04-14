@@ -1,1 +1,0 @@
-$data remove storage wasm:c locals[$(a0)]

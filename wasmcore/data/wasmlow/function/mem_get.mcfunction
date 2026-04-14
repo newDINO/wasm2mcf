@@ -1,0 +1,1 @@
+$return run data get storage mems:m0 data[$(addr)]

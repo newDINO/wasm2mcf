@@ -1,1 +1,0 @@
-$data modify storage wasm:c rets.r0 set value "$(a0)$(a1)"

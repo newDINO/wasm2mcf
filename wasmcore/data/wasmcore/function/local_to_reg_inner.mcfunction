@@ -1,1 +1,0 @@
-$execute store result score $(a0) wasm run data get storage wasm:c locals[$(a1)][$(a2)] 1

@@ -1,1 +1,0 @@
-scoreboard players operation local_index wasm += one wasm

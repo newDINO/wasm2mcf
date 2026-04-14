@@ -1,5 +1,6 @@
-use std::{collections::HashMap, fmt::Write, fs, vec};
+use std::{collections::HashSet, fmt::Write, fs};
 
+use bytemuck::cast_slice;
 use serde::Serialize;
 use wasmparser as wp;
 
@@ -11,12 +12,18 @@ fn main() {
     let parser = wp::Parser::new(0);
     let payloads = parser.parse_all(&data);
 
+    let existing_funcs: HashSet<&str> = HashSet::from_iter(["exec"]);
+
     let mut types = Vec::new();
-    let mut function_type_ids = Vec::new();
+    let mut import_func_num = 0;
+    let mut funcs_info = Vec::new();
 
-    let mut func_exports: HashMap<u32, String> = HashMap::new();
+    let pack_name = "testpack";
+    let target_path = format!("target/{pack_name}/data/{pack_name}/function");
+    fs::remove_dir_all(&target_path).unwrap();
+    fs::create_dir(&target_path).unwrap();
 
-    let target_path = "target/testpack/data/testpack/function";
+    let mut memory = Vec::new();
 
     let mut code_section_index = 0;
 
@@ -32,18 +39,44 @@ fn main() {
                 }
                 println!("{:?}", types);
             }
+            wp::Payload::ImportSection(r) => {
+                for item in r.into_imports_with_offsets() {
+                    let import = item.unwrap().1;
+                    if !existing_funcs.contains(import.name) {
+                        panic!("Importing functions that is not provided");
+                    }
+                    match import.ty {
+                        wp::TypeRef::Func(f) => funcs_info.push(FuncInfo {
+                            name: Some(import.name),
+                            ty: f,
+                            is_import: true,
+                        }),
+                        _ => panic!("Currently only support importing functions"),
+                    }
+                    println!("{:?}", import);
+                }
+                import_func_num = funcs_info.len();
+            }
             wp::Payload::FunctionSection(r) => {
                 for item in r.into_iter_with_offsets() {
                     let index = item.unwrap().1;
-                    function_type_ids.push(index);
+                    funcs_info.push(FuncInfo {
+                        name: None,
+                        ty: index,
+                        is_import: false,
+                    });
                 }
-                println!("{:?}", function_type_ids);
             }
             wp::Payload::MemorySection(r) => {
-                for item in r.into_iter_with_offsets() {
+                for (i, item) in r.into_iter_with_offsets().enumerate() {
+                    if i > 0 {
+                        panic!("Currently only support one memory.")
+                    }
                     let mem = item.unwrap().1;
                     let page_size = mem.page_size();
-                    println!("Memory initial size: {}", page_size * mem.initial as u32);
+                    let mem_size = page_size * mem.initial as u32;
+                    memory = vec![0i8; mem_size as usize];
+                    println!("Memory initial size: {}", mem_size);
                 }
             }
             wp::Payload::ExportSection(r) => {
@@ -51,7 +84,7 @@ fn main() {
                     let export = item.unwrap().1;
                     match export.kind {
                         wp::ExternalKind::Func => {
-                            func_exports.insert(export.index, export.name.to_owned());
+                            funcs_info[export.index as usize].name = Some(export.name);
                         }
                         _ => {}
                     }
@@ -60,13 +93,12 @@ fn main() {
             wp::Payload::CodeSectionEntry(r) => {
                 let mut ro = r.get_operators_reader().unwrap();
                 let mut mcf = String::new();
-                writeln!(&mut mcf, "function wasmcore:func_enter").unwrap();
                 while let Ok(operator) = ro.read() {
-                    transpile(operator, &mut mcf);
+                    transpile(operator, &mut mcf, &types, &funcs_info, &pack_name);
                 }
-                if let Some(export_name) = func_exports.get(&code_section_index) {
+                if let Some(func_name) = funcs_info[code_section_index + import_func_num].name {
                     fs::write(
-                        format!("{}/{}.mcfunction", target_path, export_name),
+                        format!("{}/{}.mcfunction", target_path, func_name),
                         mcf.as_bytes(),
                     )
                     .unwrap();
@@ -81,11 +113,15 @@ fn main() {
                             memory_index,
                             offset_expr,
                         } => {
+                            if *memory_index != 0 {
+                                panic!("Only support memory index 0");
+                            }
                             let offset = offset_expr.get_operators_reader().read().unwrap();
                             let wp::Operator::I32Const { value: offset } = offset else {
                                 panic!("{}", DONT_SUPPORT);
                             };
-                            println!("memory: {}, offsewasmcore: {}", memory_index, offset);
+                            memory[offset as usize..offset as usize + data.data.len()]
+                                .copy_from_slice(cast_slice(data.data));
                         }
                         wp::DataKind::Passive => {
                             panic!("{}", DONT_SUPPORT);
@@ -100,15 +136,19 @@ fn main() {
     let command_storage = CommandStorage {
         data: CommandStorageData {
             contents: CommandStorageContents {
-                m: MemData {
-                    mems: crab_nbt::NbtTag::List(vec![crab_nbt::NbtTag::IntArray(vec![0, 1, 2])]),
-                },
+                m0: MemData { data: memory },
             },
         },
         data_version: 0,
     };
-    let command_storage_file = fs::File::create("target/command_storage.dat").unwrap();
-    crab_nbt::serde::ser::to_writer(&command_storage, "".to_owned(), command_storage_file).unwrap();
+    let mut command_storage_file = fs::File::create("target/command_storage.dat").unwrap();
+    na_nbt::to_writer_be(&mut command_storage_file, &command_storage).unwrap();
+}
+
+struct FuncInfo<'a> {
+    name: Option<&'a str>,
+    ty: u32,
+    is_import: bool,
 }
 
 #[derive(Serialize)]
@@ -124,22 +164,65 @@ struct CommandStorageData {
 
 #[derive(Serialize)]
 struct CommandStorageContents {
-    m: MemData,
+    m0: MemData,
 }
 
 #[derive(Serialize)]
 struct MemData {
-    mems: crab_nbt::NbtTag,
+    #[serde(with = "na_nbt::byte_array")]
+    data: Vec<i8>,
 }
 
-fn transpile(operator: wp::Operator, out: &mut String) {
+fn transpile(
+    operator: wp::Operator,
+    out: &mut String,
+    types: &[wp::CompositeInnerType],
+    funcs_info: &[FuncInfo],
+    pack_name: &str,
+) {
     match operator {
-        wp::Operator::LocalGet { local_index } => {
-            writeln!(out, "function wasmcore:local_get {{a0: {}}}", local_index).unwrap()
+        wp::Operator::LocalGet { local_index } => writeln!(
+            out,
+            "data modify storage wasm:c stack append from storage wasm:c locals[-1][{}]",
+            local_index
+        )
+        .unwrap(),
+        wp::Operator::I32Add => writeln!(out, "function wasmlow:binop {{op: '+'}}").unwrap(),
+        wp::Operator::I32Mul => writeln!(out, "function wasmlow:binop {{op: '*'}}").unwrap(),
+        wp::Operator::End => writeln!(out, "data remove storage wasm:c locals[-1]").unwrap(),
+        wp::Operator::I32Const { value } => writeln!(
+            out,
+            "data modify storage wasm:c stack append value {}",
+            value
+        )
+        .unwrap(),
+        wp::Operator::Call { function_index } => {
+            let info = &funcs_info[function_index as usize];
+
+            let wp::CompositeInnerType::Func(func_type) = &types[info.ty as usize] else {
+                panic!("The type of the function is not of FuncType");
+            };
+
+            writeln!(out, "data modify storage wasm:c locals append value []").unwrap();
+            for i in 0..func_type.params().len() {
+                let stack_index = i as i32 - func_type.params().len() as i32;
+                writeln!(
+                    out,
+                    "data modify storage wasm:c locals[-1] append from storage wasm:c stack[{stack_index}]"
+                )
+                .unwrap();
+            }
+            for _ in 0..func_type.params().len() {
+                writeln!(out, "data remove storage wasm:c stack[-1]").unwrap();
+            }
+
+            let name_space = if info.is_import {
+                "wasmhigh"
+            } else {
+                pack_name
+            };
+            writeln!(out, "function {}:{}", name_space, info.name.unwrap()).unwrap();
         }
-        wp::Operator::I32Add => writeln!(out, "function wasmcore:add").unwrap(),
-        wp::Operator::I32Mul => writeln!(out, "function wasmcore:mul").unwrap(),
-        wp::Operator::End => writeln!(out, "function wasmcore:func_ret").unwrap(),
         _ => panic!("Doesn't support operator: {:?} yet.", operator),
     };
 }

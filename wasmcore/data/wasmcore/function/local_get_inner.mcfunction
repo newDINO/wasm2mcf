@@ -1,1 +1,0 @@
-$data modify storage wasm:c stack append from storage wasm:c locals[$(a0)][$(a1)]
