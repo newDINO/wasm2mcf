@@ -9,4 +9,3 @@ data merge storage wasm:chars {list: [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' 
 
 scoreboard objectives remove wasm
 scoreboard objectives add wasm dummy "wasm"
-scoreboard players set one wasm 1

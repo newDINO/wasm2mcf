@@ -91,11 +91,9 @@ fn main() {
                 }
             }
             wp::Payload::CodeSectionEntry(r) => {
-                let mut ro = r.get_operators_reader().unwrap();
+                let ro = r.get_operators_reader().unwrap();
                 let mut mcf = String::new();
-                while let Ok(operator) = ro.read() {
-                    transpile(operator, &mut mcf, &types, &funcs_info, &pack_name);
-                }
+                transpile(ro.into_iter(), &mut mcf, &types, &funcs_info, &pack_name);
                 if let Some(func_name) = funcs_info[code_section_index + import_func_num].name {
                     fs::write(
                         format!("{}/{}.mcfunction", target_path, func_name),
@@ -174,55 +172,64 @@ struct MemData {
 }
 
 fn transpile(
-    operator: wp::Operator,
+    operators: wp::OperatorsIterator,
     out: &mut String,
     types: &[wp::CompositeInnerType],
     funcs_info: &[FuncInfo],
     pack_name: &str,
 ) {
-    match operator {
-        wp::Operator::LocalGet { local_index } => writeln!(
-            out,
-            "data modify storage wasm:c stack append from storage wasm:c locals[-1][{}]",
-            local_index
-        )
-        .unwrap(),
-        wp::Operator::I32Add => writeln!(out, "function wasmlow:binop {{op: '+'}}").unwrap(),
-        wp::Operator::I32Mul => writeln!(out, "function wasmlow:binop {{op: '*'}}").unwrap(),
-        wp::Operator::End => writeln!(out, "data remove storage wasm:c locals[-1]").unwrap(),
-        wp::Operator::I32Const { value } => writeln!(
-            out,
-            "data modify storage wasm:c stack append value {}",
-            value
-        )
-        .unwrap(),
-        wp::Operator::Call { function_index } => {
-            let info = &funcs_info[function_index as usize];
+    for operator in operators {
+        let operator = operator.unwrap();
+        match operator {
+            wp::Operator::LocalGet { local_index } => writeln!(
+                out,
+                "data modify storage wasm:c stack append from storage wasm:c locals[-1][{}]",
+                local_index
+            )
+            .unwrap(),
+            wp::Operator::I32Add => writeln!(out, "function wasmlow:binop {{op: '+'}}").unwrap(),
+            wp::Operator::I32Mul => writeln!(out, "function wasmlow:binop {{op: '*'}}").unwrap(),
+            wp::Operator::End => writeln!(out, "data remove storage wasm:c locals[-1]").unwrap(),
+            wp::Operator::I32Const { value } => writeln!(
+                out,
+                "data modify storage wasm:c stack append value {}",
+                value
+            )
+            .unwrap(),
+            wp::Operator::Br { relative_depth } => {
+                if relative_depth > 0 {
+                    panic!("Currently don't support breaking out multiple levels.")
+                }
+                // TODO: Calculate current stack length of the block frame.
+            }
+            wp::Operator::Call { function_index } => {
+                let info = &funcs_info[function_index as usize];
 
-            let wp::CompositeInnerType::Func(func_type) = &types[info.ty as usize] else {
-                panic!("The type of the function is not of FuncType");
-            };
+                let wp::CompositeInnerType::Func(func_type) = &types[info.ty as usize] else {
+                    panic!("The type of the function is not of FuncType");
+                };
 
-            writeln!(out, "data modify storage wasm:c locals append value []").unwrap();
-            for i in 0..func_type.params().len() {
-                let stack_index = i as i32 - func_type.params().len() as i32;
-                writeln!(
+                writeln!(out, "data modify storage wasm:c locals append value []").unwrap();
+                for i in 0..func_type.params().len() {
+                    let stack_index = i as i32 - func_type.params().len() as i32;
+                    writeln!(
                     out,
                     "data modify storage wasm:c locals[-1] append from storage wasm:c stack[{stack_index}]"
                 )
                 .unwrap();
-            }
-            for _ in 0..func_type.params().len() {
-                writeln!(out, "data remove storage wasm:c stack[-1]").unwrap();
-            }
+                }
+                for _ in 0..func_type.params().len() {
+                    writeln!(out, "data remove storage wasm:c stack[-1]").unwrap();
+                }
 
-            let name_space = if info.is_import {
-                "wasmhigh"
-            } else {
-                pack_name
-            };
-            writeln!(out, "function {}:{}", name_space, info.name.unwrap()).unwrap();
-        }
-        _ => panic!("Doesn't support operator: {:?} yet.", operator),
-    };
+                let name_space = if info.is_import {
+                    "wasmhigh"
+                } else {
+                    pack_name
+                };
+                writeln!(out, "function {}:{}", name_space, info.name.unwrap()).unwrap();
+            }
+            _ => panic!("Doesn't support operator: {:?} yet.", operator),
+        };
+    }
 }
