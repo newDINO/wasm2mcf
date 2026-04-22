@@ -1,6 +1,6 @@
-# Params: charcode, rets.str
-# Push a char to rets.str
+# Params: $(charcode), temp.str
+# Push a char to temp.str
 
-data modify storage wasm:c args.str0 set from storage wasm:c rets.str
-$data modify storage wasm:c args.str1 set from storage wasm:chars list[$(charcode)]
-function wasmlow:string_cat with storage wasm:c args
+data modify storage wasm:s temp.str0 set from storage wasm:s temp.str
+$data modify storage wasm:s temp.str1 set from storage wasm:chars list[$(charcode)]
+function wasmlow:string_cat with storage wasm:s temp

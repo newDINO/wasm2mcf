@@ -1,14 +1,12 @@
 # Params:
-# locals.0: string start addr
-# locals.1: string size
+# $(si)
+# l0: string start addr
+# l1: string size
 
-execute store result score v0 wasm run data get storage wasm:c locals[-1][0]
-execute store result score v1 wasm run data get storage wasm:c locals[-1][1]
-scoreboard players operation v1 wasm += v0 wasm
+$scoreboard players operation l1 wasm$(si) += l0 wasm$(si)
+data modify storage wasm:s temp.str set value ""
 
-data modify storage wasm:c rets.str set value ""
+$execute if score l0 wasm$(si) < l1 wasm$(si) run function wasmlow:bytes_to_str { si: $(si) }
+function wasmlow:exec with storage wasm:s temp
 
-execute if score v0 wasm < v1 wasm run function wasmlow:bytes_to_str
-function wasmlow:exec with storage wasm:c rets
-
-data remove storage wasm:c locals[-1]
+$scoreboard objectives remove wasm$(si)

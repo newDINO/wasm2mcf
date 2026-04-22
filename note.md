@@ -102,6 +102,7 @@ fn simulate_u32_div_even_using_i32_div_even(v: u32, d: u32) -> u32 {
 - Marker应该是是最适合的作为双精度浮点加法器的
 - exec.mcfunction
 - 未经压缩的command_storage.dat也能被直接打开，并且随意设置DataVersion没关系
+- reload在某次试验中并不能加载拷贝进去的command_storage.dat，重进存档后可以加载
 
 ## 其他类似
 - clang-mc

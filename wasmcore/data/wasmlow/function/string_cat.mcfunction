@@ -1,1 +1,1 @@
-$data modify storage wasm:c rets.str set value "$(str0)$(str1)"
+$data modify storage wasm:s temp.str set value "$(str0)$(str1)"

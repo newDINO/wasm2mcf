@@ -178,56 +178,109 @@ fn transpile(
     funcs_info: &[FuncInfo],
     pack_name: &str,
 ) {
+    let mut stack_len = 0;
     for operator in operators {
         let operator = operator.unwrap();
         match operator {
-            wp::Operator::LocalGet { local_index } => writeln!(
-                out,
-                "data modify storage wasm:c stack append from storage wasm:c locals[-1][{}]",
-                local_index
-            )
-            .unwrap(),
-            wp::Operator::I32Add => writeln!(out, "function wasmlow:binop {{op: '+'}}").unwrap(),
-            wp::Operator::I32Mul => writeln!(out, "function wasmlow:binop {{op: '*'}}").unwrap(),
-            wp::Operator::End => writeln!(out, "data remove storage wasm:c locals[-1]").unwrap(),
-            wp::Operator::I32Const { value } => writeln!(
-                out,
-                "data modify storage wasm:c stack append value {}",
-                value
-            )
-            .unwrap(),
-            wp::Operator::Br { relative_depth } => {
-                if relative_depth > 0 {
-                    panic!("Currently don't support breaking out multiple levels.")
-                }
-                // TODO: Calculate current stack length of the block frame.
+            wp::Operator::LocalGet { local_index } => {
+                writeln!(
+                    out,
+                    "$execute store result score v{} wasm$(si) run scoreboard players get l{} wasm$(si)",
+                    stack_len, local_index,
+                )
+                .unwrap();
+                stack_len += 1;
+            }
+            wp::Operator::I32Add => {
+                writeln!(
+                    out,
+                    "$scoreboard players operation v{} wasm$(si) += v{} wasm$(si)",
+                    stack_len - 2,
+                    stack_len - 1
+                )
+                .unwrap();
+                stack_len -= 1;
+            }
+            wp::Operator::I32Mul => {
+                writeln!(
+                    out,
+                    "$scoreboard players operation v{} wasm$(si) *= v{} wasm$(si)",
+                    stack_len - 2,
+                    stack_len - 1
+                )
+                .unwrap();
+                stack_len -= 1;
+            }
+            wp::Operator::End => {}
+            wp::Operator::I32Const { value } => {
+                writeln!(
+                    out,
+                    "$scoreboard players set v{} wasm$(si) {}",
+                    stack_len, value,
+                )
+                .unwrap();
+                stack_len += 1;
             }
             wp::Operator::Call { function_index } => {
+                // TODO:
+
                 let info = &funcs_info[function_index as usize];
 
                 let wp::CompositeInnerType::Func(func_type) = &types[info.ty as usize] else {
                     panic!("The type of the function is not of FuncType");
                 };
 
-                writeln!(out, "data modify storage wasm:c locals append value []").unwrap();
-                for i in 0..func_type.params().len() {
-                    let stack_index = i as i32 - func_type.params().len() as i32;
-                    writeln!(
+                writeln!(out, "scoreboard players add si wasm 1").unwrap();
+                writeln!(out, "scoreboard players add si1 wasm 1").unwrap();
+                writeln!(out, "execute store result storage wasm:s call_args.si int 1 run scoreboard players get si wasm").unwrap();
+                writeln!(out, "execute store result storage wasm:s call_args.si1 int 1 run scoreboard players get si1 wasm").unwrap();
+                writeln!(
                     out,
-                    "data modify storage wasm:c locals[-1] append from storage wasm:c stack[{stack_index}]"
+                    "$scoreboard objectives add wasm$(si1) dummy 'wasm$(si1)'"
                 )
                 .unwrap();
+                for i in 0..func_type.params().len() {
+                    let param = func_type.params()[i];
+                    match param {
+                        wp::ValType::I32 => {
+                            writeln!(
+                                out,
+                                "$execute store result score l{} wasm$(si1) run scoreboard players get v{} wasm$(si)",
+                                i, stack_len - func_type.params().len() + i
+                            ).unwrap();
+                        }
+                        _ => panic!("Don't support function parameter types other than I32"),
+                    }
                 }
-                for _ in 0..func_type.params().len() {
-                    writeln!(out, "data remove storage wasm:c stack[-1]").unwrap();
-                }
-
-                let name_space = if info.is_import {
+                let path = if info.is_import {
                     "wasmhigh"
                 } else {
                     pack_name
                 };
-                writeln!(out, "function {}:{}", name_space, info.name.unwrap()).unwrap();
+                writeln!(
+                    out,
+                    "function {}:{} with storage wasm:s call_args",
+                    path,
+                    info.name.unwrap()
+                )
+                .unwrap();
+                for i in 0..func_type.results().len() {
+                    let ret = func_type.results()[i];
+                    match ret {
+                        wp::ValType::I32 => {
+                            writeln!(out, "$execute store result v{} wasm$(si) run scoreboard players get v{} wasm$(si1)", stack_len + i, i).unwrap();
+                        }
+                        _ => panic!("Don't support function return types other than I32"),
+                    }
+                }
+                writeln!(out, "$scoreboard objectives remove wasm$(si1)").unwrap();
+                writeln!(out, "scoreboard players remove si wasm 1").unwrap();
+                writeln!(out, "scoreboard players remove si1 wasm 1").unwrap();
+                writeln!(out, "execute store result storage wasm:s call_args.si int 1 run scoreboard players get si wasm").unwrap();
+                writeln!(out, "execute store result storage wasm:s call_args.si1 int 1 run scoreboard players get si1 wasm").unwrap();
+
+                stack_len += func_type.results().len();
+                stack_len -= func_type.params().len();
             }
             _ => panic!("Doesn't support operator: {:?} yet.", operator),
         };
