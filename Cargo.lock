@@ -62,6 +62,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "limit_test"
+version = "0.1.0"
+
+[[package]]
 name = "na_nbt"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
