@@ -179,51 +179,13 @@ fn transpile(
     pack_name: &str,
 ) {
     let mut stack_len = 0;
+
     for operator in operators {
         let operator = operator.unwrap();
         match operator {
-            wp::Operator::LocalGet { local_index } => {
-                writeln!(
-                    out,
-                    "$execute store result score v{} wasm$(si) run scoreboard players get l{} wasm$(si)",
-                    stack_len, local_index,
-                )
-                .unwrap();
-                stack_len += 1;
-            }
-            wp::Operator::I32Add => {
-                writeln!(
-                    out,
-                    "$scoreboard players operation v{} wasm$(si) += v{} wasm$(si)",
-                    stack_len - 2,
-                    stack_len - 1
-                )
-                .unwrap();
-                stack_len -= 1;
-            }
-            wp::Operator::I32Mul => {
-                writeln!(
-                    out,
-                    "$scoreboard players operation v{} wasm$(si) *= v{} wasm$(si)",
-                    stack_len - 2,
-                    stack_len - 1
-                )
-                .unwrap();
-                stack_len -= 1;
-            }
+            wp::Operator::Nop => {}
             wp::Operator::End => {}
-            wp::Operator::I32Const { value } => {
-                writeln!(
-                    out,
-                    "$scoreboard players set v{} wasm$(si) {}",
-                    stack_len, value,
-                )
-                .unwrap();
-                stack_len += 1;
-            }
             wp::Operator::Call { function_index } => {
-                // TODO:
-
                 let info = &funcs_info[function_index as usize];
 
                 let wp::CompositeInnerType::Func(func_type) = &types[info.ty as usize] else {
@@ -281,6 +243,44 @@ fn transpile(
 
                 stack_len += func_type.results().len();
                 stack_len -= func_type.params().len();
+            }
+            wp::Operator::LocalGet { local_index } => {
+                writeln!(
+                    out,
+                    "$execute store result score v{} wasm$(si) run scoreboard players get l{} wasm$(si)",
+                    stack_len, local_index,
+                )
+                .unwrap();
+                stack_len += 1;
+            }
+            wp::Operator::I32Const { value } => {
+                writeln!(
+                    out,
+                    "$scoreboard players set v{} wasm$(si) {}",
+                    stack_len, value,
+                )
+                .unwrap();
+                stack_len += 1;
+            }
+            wp::Operator::I32Add => {
+                writeln!(
+                    out,
+                    "$scoreboard players operation v{} wasm$(si) += v{} wasm$(si)",
+                    stack_len - 2,
+                    stack_len - 1
+                )
+                .unwrap();
+                stack_len -= 1;
+            }
+            wp::Operator::I32Mul => {
+                writeln!(
+                    out,
+                    "$scoreboard players operation v{} wasm$(si) *= v{} wasm$(si)",
+                    stack_len - 2,
+                    stack_len - 1
+                )
+                .unwrap();
+                stack_len -= 1;
             }
             _ => panic!("Doesn't support operator: {:?} yet.", operator),
         };
